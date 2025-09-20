@@ -16,6 +16,7 @@ use halo2_proofs::{
     },
 };
 use helpers::mock_transcript::MockTranscript;
+use helpers::params_cache::load_or_build_params_k18;
 use rand::rngs::OsRng;
 use snark_verifier::loader::native::NativeLoader;
 use snark_verifier_sdk::types::PoseidonTranscript;
@@ -34,8 +35,9 @@ fn setup_params_and_keys(
     VerifyingKey<G1Affine>,
     ProvingKey<G1Affine>,
 ) {
-    let mut rng = OsRng;
-    let params = ParamsKZG::<Bn256>::setup(18, &mut rng);
+    //let mut rng = OsRng;
+    //let params = ParamsKZG::<Bn256>::setup(18, &mut rng);
+    let params = load_or_build_params_k18();
     let vk = keygen_vk(&params, circuit).expect("key generation for vk should succeed");
     let pk = keygen_pk(&params, vk.clone(), circuit).expect("key generation for pk should succeed");
     (params, vk, pk)

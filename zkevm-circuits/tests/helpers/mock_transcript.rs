@@ -6,8 +6,19 @@ use std::{
 use ff::PrimeField;
 use halo2_proofs::{
     halo2curves::CurveAffine,
-    transcript::{EncodedChallenge, Transcript, TranscriptWrite, TranscriptWriterBuffer},
+    transcript::{
+        EncodedChallenge, Transcript, TranscriptRead, TranscriptReadBuffer, TranscriptWrite,
+        TranscriptWriterBuffer,
+    },
 };
+
+/// Typed events captured by [`MockTranscript`] while wrapping an inner transcript.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum TEvent {
+    AbsorbPoint(Vec<u8>),
+    AbsorbScalar(Vec<u8>),
+    SqueezeChallenge(Vec<u8>),
+}
 
 /// A test helper that wraps an existing transcript and records all absorbed bytes.
 ///
@@ -18,6 +29,7 @@ use halo2_proofs::{
 pub struct MockTranscript<T> {
     inner: T,
     absorbed: Arc<Mutex<Vec<Vec<u8>>>>,
+    events: Arc<Mutex<Vec<TEvent>>>,
 }
 
 impl<T> MockTranscript<T> {
@@ -26,6 +38,7 @@ impl<T> MockTranscript<T> {
         Self {
             inner,
             absorbed: Arc::new(Mutex::new(Vec::new())),
+            events: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -42,11 +55,26 @@ impl<T> MockTranscript<T> {
         self.inner
     }
 
+    /// Returns the typed event log collected so far.
+    pub fn events(&self) -> Vec<TEvent> {
+        self.events
+            .lock()
+            .expect("mock transcript event log poisoned")
+            .clone()
+    }
+
     fn record_bytes(&self, bytes: &[u8]) {
         self.absorbed
             .lock()
             .expect("mock transcript log poisoned")
             .push(bytes.to_vec());
+    }
+
+    fn record_event(&self, event: TEvent) {
+        self.events
+            .lock()
+            .expect("mock transcript event log poisoned")
+            .push(event);
     }
 }
 
@@ -57,19 +85,41 @@ where
     E: EncodedChallenge<C>,
 {
     fn squeeze_challenge(&mut self) -> E {
-        self.inner.squeeze_challenge()
+        let challenge = self.inner.squeeze_challenge();
+        let repr = challenge.get_scalar().to_repr();
+        self.record_event(TEvent::SqueezeChallenge(repr.as_ref().to_vec()));
+        challenge
     }
 
     fn common_point(&mut self, point: C) -> io::Result<()> {
-        let encoded = point.to_bytes();
-        self.record_bytes(encoded.as_ref());
         self.inner.common_point(point)
     }
 
     fn common_scalar(&mut self, scalar: C::Scalar) -> io::Result<()> {
+        self.inner.common_scalar(scalar)
+    }
+}
+
+impl<T, C, E> TranscriptRead<C, E> for MockTranscript<T>
+where
+    T: TranscriptRead<C, E>,
+    C: CurveAffine,
+    E: EncodedChallenge<C>,
+{
+    fn read_point(&mut self) -> io::Result<C> {
+        let point = self.inner.read_point()?;
+        let encoded = point.to_bytes();
+        self.record_bytes(encoded.as_ref());
+        self.record_event(TEvent::AbsorbPoint(encoded.as_ref().to_vec()));
+        Ok(point)
+    }
+
+    fn read_scalar(&mut self) -> io::Result<C::Scalar> {
+        let scalar = self.inner.read_scalar()?;
         let encoded = scalar.to_repr();
         self.record_bytes(encoded.as_ref());
-        self.inner.common_scalar(scalar)
+        self.record_event(TEvent::AbsorbScalar(encoded.as_ref().to_vec()));
+        Ok(scalar)
     }
 }
 
@@ -80,10 +130,16 @@ where
     E: EncodedChallenge<C>,
 {
     fn write_point(&mut self, point: C) -> io::Result<()> {
+        let encoded = point.to_bytes();
+        self.record_bytes(encoded.as_ref());
+        self.record_event(TEvent::AbsorbPoint(encoded.as_ref().to_vec()));
         self.inner.write_point(point)
     }
 
     fn write_scalar(&mut self, scalar: C::Scalar) -> io::Result<()> {
+        let encoded = scalar.to_repr();
+        self.record_bytes(encoded.as_ref());
+        self.record_event(TEvent::AbsorbScalar(encoded.as_ref().to_vec()));
         self.inner.write_scalar(scalar)
     }
 }
@@ -101,5 +157,17 @@ where
 
     fn finalize(self) -> W {
         self.inner.finalize()
+    }
+}
+
+impl<T, R, C, E> TranscriptReadBuffer<R, C, E> for MockTranscript<T>
+where
+    T: TranscriptReadBuffer<R, C, E>,
+    C: CurveAffine,
+    E: EncodedChallenge<C>,
+    R: io::Read,
+{
+    fn init(reader: R) -> Self {
+        Self::new(<T as TranscriptReadBuffer<R, C, E>>::init(reader))
     }
 }
