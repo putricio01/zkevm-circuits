@@ -35,7 +35,9 @@ use helpers::{
 use rand::{rngs::StdRng, SeedableRng};
 
 #[cfg(feature = "poseidon_transcript")]
-use halo2_proofs::transcript::poseidon::{PoseidonRead, PoseidonWrite};
+use snark_verifier::loader::native::NativeLoader;
+#[cfg(feature = "poseidon_transcript")]
+use snark_verifier_sdk::types::{PoseidonTranscript, POSEIDON_SPEC};
 
 fn instance_rows(instances: &[Vec<Fr>]) -> Vec<&[Fr]> {
     instances.iter().map(Vec::as_slice).collect()
@@ -399,7 +401,7 @@ fn produce_flow_proof_poseidon(
     label: &str,
 ) -> (Vec<u8>, Vec<Seg>) {
     let mut transcript = MockTranscript::new(
-        PoseidonWrite::<Vec<u8>, G1Affine, Challenge255<G1Affine>>::init(Vec::new()),
+        PoseidonTranscript::<NativeLoader, _>::from_spec(Vec::new(), POSEIDON_SPEC.clone()),
     );
     let rng = StdRng::seed_from_u64(seed);
     println!("Generating {label} (Poseidon) proof (seed = {seed})...");
@@ -685,7 +687,8 @@ fn fh_public_input_tamper_poseidon() {
     let x = Fr::from(12345u64);
     let (circuit, instances) = make_instance_circuit(x);
 
-    let mut prover = PoseidonWrite::<Vec<u8>, G1Affine, Challenge255<G1Affine>>::init(Vec::new());
+    let mut prover =
+        PoseidonTranscript::<NativeLoader, _>::from_spec(Vec::new(), POSEIDON_SPEC.clone());
     let rng = StdRng::seed_from_u64(13);
     let instance_rows_vec = instance_rows(&instances);
     let instance_refs: Vec<&[&[Fr]]> = vec![instance_rows_vec.as_slice()];
@@ -704,9 +707,10 @@ fn fh_public_input_tamper_poseidon() {
     println!("Baseline verification with Poseidon transcript...");
     let baseline_rows_vec = instance_rows(&instances);
     let baseline_refs: Vec<&[&[Fr]]> = vec![baseline_rows_vec.as_slice()];
-    let mut baseline_verifier = PoseidonRead::<_, G1Affine, Challenge255<_>>::init(Cursor::new(
-        proof_bytes.clone(),
-    ));
+    let mut baseline_verifier = PoseidonTranscript::<NativeLoader, _>::from_spec(
+        Cursor::new(proof_bytes.clone()),
+        POSEIDON_SPEC.clone(),
+    );
     let strategy = SingleStrategy::new(&params);
     verify_proof::<KZGCommitmentScheme<Bn256>, VerifierSHPLONK<_>, _, _, _>(
         &params,
@@ -722,9 +726,10 @@ fn fh_public_input_tamper_poseidon() {
     let tampered_instances = vec![vec![x + Fr::from(1u64)]];
     let tampered_rows_vec = instance_rows(&tampered_instances);
     let tampered_refs: Vec<&[&[Fr]]> = vec![tampered_rows_vec.as_slice()];
-    let mut tampered_verifier = PoseidonRead::<_, G1Affine, Challenge255<_>>::init(Cursor::new(
-        proof_bytes.clone(),
-    ));
+    let mut tampered_verifier = PoseidonTranscript::<NativeLoader, _>::from_spec(
+        Cursor::new(proof_bytes.clone()),
+        POSEIDON_SPEC.clone(),
+    );
     let strategy = SingleStrategy::new(&params);
     let tampered_result = verify_proof::<KZGCommitmentScheme<Bn256>, VerifierSHPLONK<_>, _, _, _>(
         &params,
@@ -776,9 +781,12 @@ fn fh_whole_island_swap_poseidon() {
     log_island_map("Flow A (Poseidon)", &flow_a_segments);
     log_island_map("Flow B (Poseidon)", &flow_b_segments);
 
-    let mut baseline_verifier = MockTranscript::new(PoseidonRead::<_, G1Affine, Challenge255<_>>::init(
-        Cursor::new(flow_a_proof.clone()),
-    ));
+    let mut baseline_verifier = MockTranscript::new(
+        PoseidonTranscript::<NativeLoader, _>::from_spec(
+            Cursor::new(flow_a_proof.clone()),
+            POSEIDON_SPEC.clone(),
+        ),
+    );
     let strategy = SingleStrategy::new(&params);
     verify_proof::<KZGCommitmentScheme<Bn256>, VerifierSHPLONK<_>, _, _, _>(
         &params,
@@ -866,7 +874,10 @@ fn fh_whole_island_swap_poseidon() {
         );
 
         let mut spliced_verifier = MockTranscript::new(
-            PoseidonRead::<_, G1Affine, Challenge255<_>>::init(Cursor::new(spliced.clone())),
+            PoseidonTranscript::<NativeLoader, _>::from_spec(
+                Cursor::new(spliced.clone()),
+                POSEIDON_SPEC.clone(),
+            ),
         );
         let strategy = SingleStrategy::new(&params);
         let result = verify_proof::<KZGCommitmentScheme<Bn256>, VerifierSHPLONK<_>, _, _, _>(
@@ -1100,9 +1111,10 @@ fn fh_transcript_personalization_mismatch_negative() {
 
     #[cfg(feature = "poseidon_transcript")]
     {
-        let mut poseidon_verifier = PoseidonRead::<_, G1Affine, Challenge255<_>>::init(Cursor::new(
-            proof_bytes.clone(),
-        ));
+        let mut poseidon_verifier = PoseidonTranscript::<NativeLoader, _>::from_spec(
+            Cursor::new(proof_bytes.clone()),
+            POSEIDON_SPEC.clone(),
+        );
         let strategy = SingleStrategy::new(&params);
         let poseidon_result = verify_proof::<KZGCommitmentScheme<Bn256>, VerifierSHPLONK<_>, _, _, _>(
             &params,
