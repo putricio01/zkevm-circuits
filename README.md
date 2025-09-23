@@ -72,3 +72,17 @@ This repository contains several Rust packages that implement the zkevm. The hig
 [`zktrie`](https://github.com/scroll-tech/zkevm-circuits/tree/develop/zktrie)
 
 - Wrapper of scroll binary poseidon trie
+
+## Frozen Heart regression tests
+
+Run the additional Frozen Heart checks against the Blake2b transcript backend:
+
+```
+cargo test -p zkevm-circuits --test frozen_heart_extra -- --nocapture
+```
+
+Enable the Poseidon transcript backend coverage with the optional feature flag:
+
+```
+cargo test -p zkevm-circuits --test frozen_heart_extra --features poseidon_transcript -- --nocapture
+```
